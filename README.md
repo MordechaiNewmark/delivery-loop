@@ -20,9 +20,10 @@ approval before it lands.** The machine writes the code; you decide what ships.
 ```
 
 **b) Let it rip.** Turn on auto-merge (and parallelism), and approved, green PRs
-merge themselves while several tasks run at once. Your only job is keeping it fed
-with tasks in GitHub Issues — feed it well and you've got a code factory that'll
-have you tokenmaxxing in no time.
+that carry evidence merge themselves while several tasks run at once; only the
+paths you reserve (`HUMAN_MERGE_PATHS` — say, the gate itself) still wait for
+you. Your only job is keeping it fed with tasks in GitHub Issues — feed it well
+and you've got a code factory that'll have you tokenmaxxing in no time.
 
 ```
 /loop /delivery-loop:delivery-tick --parallel 3 --auto-merge
@@ -40,7 +41,7 @@ ever builds what the backlog tells it to.
 ## How it works
 
 The delivery loop is a way to build software where **agents do the work and
-GitHub holds the state**. The whole model is four ideas.
+GitHub holds the state**. The whole model is five ideas.
 
 **1 — Your backlog is GitHub Issues.** You describe what to build in specs (plain
 Markdown). `decompose` reads them and files the work as Issues: *epics* (big
@@ -74,16 +75,28 @@ the loop can run unattended.
 > gate fails until you define your checks (an empty gate never passes green).
 > From then on it's a checked-in file the loop extends as your repo grows.
 
-**4 — An orchestrator turns the crank.** `delivery-tick` is one step of the loop:
+**4 — Trust is enforced, not asked for.** Rules hold as well as they're
+enforced: code structure and the gate's checks beat runtime verification, which
+beats prose in a styleguide. So the loop pushes rules down that pyramid.
+Reviewers tag every finding with a key and name the fix; when the same finding
+shows up on two different PRs, the patcher files an `enforce:<key>` task that
+turns it into a gate check whose failure message says how to fix it. *Correct
+once, enforce forever.* And PRs carry **evidence, not just a diff**: the
+criteria's output, the gate result, and your `EVIDENCE_CMD`'s report of the app
+actually running. The reviewer reproduces it before reading the code, and
+that proof is what you review.
+
+**5 — An orchestrator turns the crank.** `delivery-tick` is one step of the loop:
 it reads the board, reconciles anything stale, and takes the next sensible
 action. Run it under `/loop` and it keeps going on its own — serially at first,
 then `--parallel N` to run several tasks at once, and `--auto-merge` to merge
 approved, green PRs for you. You start supervised and loosen the reins as you
-come to trust it.
+come to trust it. Around it runs an outer loop: `release-fuzz` uses the
+merged build like a user, and every break it can reproduce becomes a fix task.
 
 ## What you get
 
-Ten skills, namespaced `/delivery-loop:*`:
+Eleven skills, namespaced `/delivery-loop:*`:
 
 | Skill | Role |
 |---|---|
@@ -96,6 +109,7 @@ Ten skills, namespaced `/delivery-loop:*`:
 | `patch-task` | Answer review findings / failing CI on a PR (bounded to 3 iterations, then escalate). |
 | `deliver-task` | Drive one issue end-to-end — `next-task` → fresh `review-task` → bounded `patch-task` loop → hand to a human. The single-task path. |
 | `delivery-tick` | One orchestrator tick — reconcile the board and take the next action (serial, or `--parallel N`, with opt-in `--auto-merge`). |
+| `release-fuzz` | The outer loop: exercise the merged build as a user would and turn each reproducible break into a fix task (dry-run by default; `--create` after approval). |
 | `task-status` | Render the board; `--reclaim` reconciles labels and frees stale claims. |
 
 The queue, claim arbitration (a comment-ordered Lamport lock), and worktree
@@ -160,6 +174,8 @@ One per-repo file is the entire seam between the generic engine and your project
 | `STYLEGUIDES_DIR` | `styleguides/` | Where coding conventions live. |
 | `MODULES` | (empty) | Allowed `module:` labels — the concurrency unit (≤ 1 in-flight task per module). |
 | `NOTIFY_APPROVE_CMD` / `NOTIFY_ESCALATE_CMD` | (empty) | Optional hooks run on approval / escalation (e.g. a sound). |
+| `EVIDENCE_CMD` | (empty) | Runs the real app and prints a Markdown proof report (smoke run, property tests, screenshots). Attached to every PR; re-run by the reviewer. |
+| `HUMAN_MERGE_PATHS` | (empty; `init` seeds the gate, config, and CI) | Globs whose PRs never auto-merge — they always wait for a human. |
 
 Recommended repo settings (run once, yourself — it changes GitHub state):
 
@@ -183,7 +199,7 @@ free runs are boringly reliable.
 
 ## Under the hood
 
-The mechanics behind the four ideas above:
+The mechanics behind the ideas above:
 
 - **State lives in GitHub, not a database.** Issue labels are a derived cache of
   ground truth (issue/PR state); `task-queue.sh --fix` reconciles them each tick.
@@ -192,6 +208,10 @@ The mechanics behind the four ideas above:
   (`scripts/lib/*.jq`, unit-tested in `scripts/tests/`).
 - **Every task runs in its own worktree** under `.worktrees/`, so parallel agents
   never collide in the working tree.
+- **Auto-merge eligibility is a script, too.** `merge-eligible.sh` decides it
+  (approved, green, evidence present, nothing under `HUMAN_MERGE_PATHS`), and
+  `repeat-findings.sh` finds the corrections that are due to become checks —
+  both pure `jq` logic, unit-tested like the claim lock.
 - **The gate is never bypassed.** No stage may skip the `GATE_CMD` check — no
   `--no-verify`, no merging red CI. It is the loop's only definition of "correct."
 
@@ -206,8 +226,8 @@ delivery-loop/
 ├── .claude-plugin/marketplace.json      # this repo as a marketplace
 └── plugins/delivery-loop/
     ├── .claude-plugin/plugin.json
-    ├── skills/                          # the 10 skills
-    ├── scripts/                         # engine: task-queue, claim-task, task-worktree, delivery-init, lib/, tests/
+    ├── skills/                          # the 11 skills
+    ├── scripts/                         # engine: task-queue, claim-task, task-worktree, merge-eligible, repeat-findings, delivery-init, lib/, tests/
     └── docs/                            # design spec + operator runbook
 ```
 

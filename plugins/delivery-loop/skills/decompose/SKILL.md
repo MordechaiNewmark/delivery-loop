@@ -23,6 +23,7 @@ You are the **decomposer** role from the delivery spec (`${CLAUDE_PLUGIN_ROOT}/d
 - Dependency edges follow the natural build order: scaffold → models → repositories → services → endpoints → wiring/integration (adapt to the stack).
 - Every task gets: title, exactly one module, size, command-shaped acceptance criteria, and its `Depends-on:` edges.
 - **A task that introduces a tool, test suite, or build step must include extending the gate (`GATE_CMD` / `scripts/check.sh`) to cover it as one of its acceptance criteria.** This is how the gate self-maintains — it grows with the repo instead of going stale.
+- **Put behavior in the strongest checkable layer** (spec §2.1). Where a task changes what a user sees or does, give it at least one criterion that exercises the running app or a property of it (a `curl` against the started service, a CLI run on a golden input, a property test) — not only a unit test of the code's shape. Where a task sets a boundary (a module others must not reach into), make the boundary a gate check rather than a sentence in Context.
 
 ## Hard rules (violating any of these means your backlog is wrong)
 

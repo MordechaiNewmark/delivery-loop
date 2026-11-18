@@ -29,7 +29,7 @@ Read `.claude/delivery.conf` for `STYLEGUIDES_DIR` (default `styleguides/`), `GA
 
 1. **Nothing lands unratified** — the human's nod is what makes a convention constitutional.
 2. **Never codify over an unpinned fork** — pins come from the human, not your preferences.
-3. **Mechanically checkable rules graduate to the gate** — the styleguides hold only what judgment must enforce.
+3. **Mechanically checkable rules graduate to the gate** — the styleguides hold only what judgment must enforce. Prose is the weakest layer of the trust pyramid (spec §2.1); a guide rule that reviewers keep re-teaching is due to become a check (`scripts/repeat-findings.sh`).
 4. **Short enough that agents actually read them** — a guide nobody can hold in context is not a constitution, it's noise.
 
 ## Exit condition

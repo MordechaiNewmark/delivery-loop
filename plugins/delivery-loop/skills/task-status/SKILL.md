@@ -16,7 +16,7 @@ You are the board renderer (and with `--reclaim`, the reclamation actuator) from
    - `gh pr list --state open --json number,title,labels,statusCheckRollup,reviewDecision`
 3. Render one compact table per bucket, in this order (most actionable first):
    - **needs-human** — issue, what's stuck (from the latest comment)
-   - **approved, awaiting human merge** — PR, linked issue
+   - **approved, awaiting human merge** — PR, linked issue, and why it isn't merging itself (`bash "${CLAUDE_PLUGIN_ROOT}/scripts/merge-eligible.sh" <pr>` prints the `hold:` reason, e.g. it touches `HUMAN_MERGE_PATHS`)
    - **changes-requested** — PR, iteration count
    - **in-review** — PR, CI status, review state
    - **claimed** — issue, assignee, human-or-agent, idle time

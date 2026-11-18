@@ -10,7 +10,7 @@
 # Do NOT `set -e`/`set -u` here — this file is sourced into scripts that own
 # their own shell options, and the expansions below are all guard-quoted.
 
-_DL_VARS="BASE_BRANCH WORKTREE_SETUP_CMD GATE_CMD SPEC_SOURCES STYLEGUIDES_DIR MODULES NOTIFY_APPROVE_CMD NOTIFY_ESCALATE_CMD"
+_DL_VARS="BASE_BRANCH WORKTREE_SETUP_CMD GATE_CMD SPEC_SOURCES STYLEGUIDES_DIR MODULES NOTIFY_APPROVE_CMD NOTIFY_ESCALATE_CMD EVIDENCE_CMD HUMAN_MERGE_PATHS"
 
 # 1/3 snapshot any env-provided overrides so they can win over the file.
 for _v in $_DL_VARS; do eval "_env_$_v=\${$_v:-}"; done
@@ -35,6 +35,9 @@ for _v in $_DL_VARS; do eval "if [ -n \"\$_env_$_v\" ]; then $_v=\"\$_env_$_v\";
 : "${MODULES:=}"
 : "${NOTIFY_APPROVE_CMD:=}"
 : "${NOTIFY_ESCALATE_CMD:=}"
+: "${EVIDENCE_CMD:=}"
+: "${HUMAN_MERGE_PATHS:=}"
 
 export BASE_BRANCH WORKTREE_SETUP_CMD GATE_CMD SPEC_SOURCES \
-       STYLEGUIDES_DIR MODULES NOTIFY_APPROVE_CMD NOTIFY_ESCALATE_CMD
+       STYLEGUIDES_DIR MODULES NOTIFY_APPROVE_CMD NOTIFY_ESCALATE_CMD \
+       EVIDENCE_CMD HUMAN_MERGE_PATHS

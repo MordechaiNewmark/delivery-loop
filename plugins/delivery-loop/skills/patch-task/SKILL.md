@@ -14,11 +14,17 @@ You are the **patcher** role from the delivery spec (`${CLAUDE_PLUGIN_ROOT}/docs
 3. **Re-enter the task worktree.** `bash "${CLAUDE_PLUGIN_ROOT}/scripts/task-worktree.sh" <issue#>` returns the existing worktree (it re-creates it from the branch if it was cleaned up). Work only there.
 4. **Fix every finding.** Address each review point and each failing check — and fix it toward the best-practice, idiomatic solution (spec §2.1), not just enough to silence the finding. If you disagree with a finding, don't silently ignore it — reply to the review comment with your reasoning and make the call visible.
 5. **Rebase** onto `origin/$BASE_BRANCH` if behind. Resolve conflicts here in the worktree. **Never force-push over review history** (after a rebase, `--force-with-lease` is acceptable only if the rebase itself required it; prefer plain pushes of fixup commits).
-6. **Re-verify.** Every acceptance criterion from the linked issue + the gate (`GATE_CMD`). Hooks fire on commit/push; never bypass the gate.
+6. **Re-verify.** Every acceptance criterion from the linked issue + the gate (`GATE_CMD`) + `EVIDENCE_CMD` if set. Hooks fire on commit/push; never bypass the gate. Refresh the PR body's `## Evidence` section with the new output (`gh pr edit <pr> --body ...`) — stale evidence is no evidence (spec §11.1).
 7. **Push**, then: comment `Patch iteration: <n+1>/3` plus a short change summary on the PR; flip the issue back: `gh issue edit <N> --add-label status:in-review --remove-label status:changes-requested`.
 8. Report what changed and that the PR awaits re-review.
 
 **Encode the lesson:** if the finding traces back to a harness gap (a criterion the gate should have caught, an ambiguous template), file a `module:infra` task.
+
+**Correct once, enforce forever** (spec §2.1, §9). Run `bash "${CLAUDE_PLUGIN_ROOT}/scripts/repeat-findings.sh"`. It lists every finding key a reviewer has had to raise on two or more different agent PRs with no enforcement task yet. For each listed key that is also among *this* PR's findings, file one enforcement task — never a new prose rule:
+
+- Title: `Enforce <key> mechanically (enforce:<key>)` — the `enforce:<key>` token retires the key from the list. Labels: `task,module:infra,size:S,status:blocked,agent-authored`; then `bash "${CLAUDE_PLUGIN_ROOT}/scripts/task-queue.sh" --fix` promotes it.
+- Context: the findings it answers, by PR number, and the strongest layer that can hold the rule — codebase structure (a directory split with banned cross-imports) over a lint or type rule over a test over a runtime check.
+- Acceptance criteria, command-shaped: a fixture or test that reproduces the mistake makes `GATE_CMD` exit non-zero; the failure message **names the fix**; `GATE_CMD` passes on the clean tree.
 
 ## Rebase-only mode (approved-but-conflicting PRs)
 

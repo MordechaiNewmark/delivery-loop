@@ -17,7 +17,7 @@ The system must support:
 * A shared task queue that agents and humans both pull from
 * Isolated parallel implementation via git worktrees
 * Deterministic verification gates on every change
-* Independent adversarial review of every change
+* Independent adversarial review of every change, judged on reproducible evidence
 * Bounded patch iteration with human escalation
 * Human approval of every merge
 * Full provenance of who (or what) produced each change
@@ -44,6 +44,8 @@ These bind every role — decomposer, implementer, reviewer, patcher — not jus
 * **Pursue best-practice solutions.** When more than one approach satisfies the acceptance criteria, choose the idiomatic, standard one for the language and framework over the cleverest or most expedient. Match the styleguides and existing patterns.
 * **Solve each problem in its own layer.** Do not distort runtime architecture to work around a process or tooling problem — a merge conflict, a CI quirk, a claim race. Fix those in the layer where they belong (git, hooks, the harness). Load-bearing example: benign "both sides appended a line" merge conflicts are solved by rebase automation and a `.gitattributes` merge driver (§8.1), not by reshaping how the application wires itself together.
 * **Best practice is a quality bar, not an acceptance criterion.** Acceptance criteria stay concrete and command-checkable (§7; decompose Hard Rule 1) — "follows best practices" is never itself a criterion. The bar is upheld by implementers choosing the idiomatic solution and reviewers flagging non-idiomatic ones, even when every criterion passes.
+* **Enforce in the strongest layer (the trust pyramid).** A rule holds only as well as it is enforced. Strongest first: the codebase's own design (architecture, API shapes, directory boundaries with banned cross-imports); the gate's mechanical checks (types, lint, tests), whose failure messages say how to fix the problem; verification of behavior (runtime checks, property and formal tests, the evidence a PR carries — §11.1); and, weakest, prose (styleguides, agent instructions). Put each rule in the strongest layer that can hold it. Prose holds only what judgment must.
+* **Correct once, enforce forever.** A correction made twice is a missing check. When reviewers flag the same class of mistake on two different PRs, the answer is an enforcement task — a lint rule, a test, a module split — not another sentence in a styleguide (§9). Every check names its fix, so an agent that trips it knows what to do without asking.
 * **Flag, don't silently comply.** If a task's prescribed approach or criteria force a non-best-practice solution (a workaround, an anti-pattern), raise it — comment on the issue, note it in the PR, or escalate `needs-human` — rather than ship the anti-pattern to satisfy the letter of the task.
 
 ## 2.2 Per-repo configuration
@@ -61,6 +63,8 @@ The engine and skills read it; nothing else needs editing to adopt the loop:
 | `STYLEGUIDES_DIR` | `styleguides/` | Coding conventions implementers/reviewers consult. |
 | `MODULES` | (empty) | Allowed `module:` labels — the concurrency unit (§8). |
 | `NOTIFY_APPROVE_CMD` / `NOTIFY_ESCALATE_CMD` | (empty) | Optional hooks on approval / escalation. |
+| `EVIDENCE_CMD` | (empty) | Command that runs the real app and prints a Markdown proof report (§11.1). |
+| `HUMAN_MERGE_PATHS` | (empty) | Globs whose PRs never auto-merge — always a human's (§8.2). |
 
 `delivery-init.sh` does more than scaffold the config: it scans the repo for
 linters, type-checkers, and test frameworks and seeds a starter `scripts/check.sh`
@@ -88,7 +92,7 @@ Claims one ready task, works in a dedicated worktree, satisfies every acceptance
 
 ### 3.4 Reviewer
 
-A fresh agent with no access to the implementer's context. Inputs are only: the issue's acceptance criteria, the PR diff, the styleguides, and a clean checkout of the PR branch in which it **executes** every acceptance criterion. Approves or requests changes. Never reviews its own work — reviewer and implementer are always different agent instances.
+A fresh agent with no access to the implementer's context. Inputs are only: the issue's acceptance criteria, the PR diff, the styleguides, and a clean checkout of the PR branch in which it **executes** every acceptance criterion and reproduces the PR's evidence (§11.1) before reading the diff. Approves or requests changes; each finding carries a stable key and names its fix (§9). Never reviews its own work — reviewer and implementer are always different agent instances.
 
 ### 3.5 Patcher
 
@@ -101,6 +105,10 @@ Approves proposed backlogs, pins spec-level design decisions and nods on spec dr
 ### 3.7 Spec author
 
 Upstream of the decomposer: turns a subsystem into a merged, decompose-ready sub-spec (`/delivery-loop:author-spec`). Collects operator pins before drafting, grounds every claim against the repo and primary sources, drafts to a house template, and lands the spec through a fresh-agent adversarial **docs review** (grounding, consistency, and buildability instead of executable criteria; verdict as a single GitHub review comment — the single-account form of record, §13.2 and runbook §7). Docs-review fix rounds resume the *same* reviewer — its grounding context is the asset — a deliberate deviation from §3.4's fresh-reviewer rule, scoped to docs reviews only. Two human gates: the draft nod before any PR, and the `/decompose` backlog approval after merge. The spec PR's merge follows the same authority model as every other PR (§3.6, §8.2): human by default, agent only under the operator's explicit standing authorization. The spec author never implements tasks — it hands the merged cutline to the decomposer and stops. Sequencing is deliberate: decomposition always runs against the **merged** spec, because review rounds change cutlines.
+
+### 3.8 Release fuzzer
+
+The outer loop (`/delivery-loop:release-fuzz`). Each PR was verified alone; the release fuzzer checks what they add up to. It checks out the base branch's HEAD, confirms the gate, then uses the app through its real seams — the spec's user flows, then off the happy path with generated input — and reduces each failure to a command that fails at that commit. Findings are backlog, so they follow the decomposer's rule: dry-run, human approval, then `--create` files them as tasks whose criteria put the repro inside the gate. It never fixes anything itself. The cycle is: PRs merge → release fuzz → fix tasks → the loop delivers them → repeat.
 
 ## 4. Task Model
 
@@ -213,6 +221,8 @@ The `deliver-task` skill runs this whole implement → review → patch sequence
 
 Human merge (or auto-merge) closes the issue; the next tick's `--fix` promotes any dependents whose last dependency just closed.
 
+Around the tick runs the outer loop: once a batch has merged, the release fuzzer (§3.8) exercises the merged build and files what breaks as new tasks, which the tick then delivers like any other.
+
 ## 7. Queue Mechanics (deterministic scripts)
 
 All queue mechanics are `gh` + `jq` shell scripts shipped with the plugin (`scripts/`). Agents call them via `${CLAUDE_PLUGIN_ROOT}/scripts/…`; they never re-derive the logic.
@@ -265,7 +275,7 @@ Many codebases have a few **central registration files** that every new module t
 * Module ownership and the union driver (§8.1) prevent most collisions, but a PR that was already **approved** can still go `CONFLICTING` when a sibling merges ahead of it — a non-append edit the union driver cannot auto-resolve. Such a PR falls through the loop: it is out of the review cycle (already approved) yet not mergeable, so absent intervention it stalls until a human hand-dispatches a rebase.
 * The orchestrator tick closes the gap. **Ordered before the "Start" step** (`delivery-tick` step 3), it detects open agent PRs whose linked issue is `status:approved` and whose `gh pr view <pr> --json mergeable,mergeStateStatus` is non-`MERGEABLE` (`mergeStateStatus: DIRTY`), and dispatches a **rebase-only** `patch-task` as a first-class, state-advancing action.
 * The rebase-only patch is mechanical: rebase onto `origin/$BASE_BRANCH`, resolve conflicts in the worktree, re-run the gate, and push with `--force-with-lease` **only as the rebase requires** — never a plain force over review history. It **preserves `status:approved`** (the approval still stands after a mechanical rebase; the PR is not sent back to review) and re-emerges immediately mergeable.
-* **Optional auto-merge (`--auto-merge`, opt-in, off by default).** By default the now-mergeable approved PR is handed to a human — the merge authority the rest of this spec assumes. Run the loop with `--auto-merge` and the orchestrator performs that final step itself: as `delivery-tick` **step 1** (highest priority, before any dispatch) it squash-merges every agent PR whose linked issue is `status:approved` and that is `MERGEABLE` + `mergeStateStatus: CLEAN` + every check `SUCCESS` and not `needs-human`, then re-reconciles so dependents unblock. The gate stays the backstop — a bad assembly fails CI, so `mergeStateStatus` never reaches `CLEAN` and the PR cannot auto-merge. A conflicting approved PR is rebased (above) before it becomes eligible.
+* **Optional auto-merge (`--auto-merge`, opt-in, off by default).** By default the now-mergeable approved PR is handed to a human — the merge authority the rest of this spec assumes. Run the loop with `--auto-merge` and the orchestrator performs that final step itself: as `delivery-tick` **step 1** (highest priority, before any dispatch) it squash-merges every agent PR that `scripts/merge-eligible.sh` clears, then re-reconciles so dependents unblock. The script is the auto-merge gate as code, not prose: linked issue `status:approved`, `MERGEABLE` + `mergeStateStatus: CLEAN`, at least one check and every check `SUCCESS`, not `needs-human`, an `## Evidence` section in the PR body (§11.1), and no changed file under `HUMAN_MERGE_PATHS`. Those paths — typically the gate script, `.claude/delivery.conf`, and CI config, the things that define "correct" — always wait for a human; everything else that carries passing evidence merges itself, so the human reviews proof and the few risky changes rather than every diff. The gate stays the backstop — a bad assembly fails CI, so `mergeStateStatus` never reaches `CLEAN` and the PR cannot auto-merge. A conflicting approved PR is rebased (above) before it becomes eligible.
 * It **skips PRs labeled `needs-human` or already at the max patch iteration** (a `Patch iteration: 3/3` comment), so a conflict that cannot be resolved mechanically escalates once rather than re-dispatching forever.
 * This is defense-in-depth complementary to §8.1: the union driver dissolves append collisions at the git layer; auto-rebase recovers the non-append conflicts union cannot.
 
@@ -274,11 +284,12 @@ Many codebases have a few **central registration files** that every new module t
 * Max 3 patch iterations per PR, tracked in a PR comment (`Patch iteration: n/3`). At 3: label `needs-human`, comment a summary of the impasse, stop.
 * An implementer that cannot satisfy a criterion (bad spec, missing dependency, environment problem) comments what it found, labels `needs-human`, releases its claim, and stops. It does not push partial work as if complete.
 * **Encode-the-lesson rule.** When a failure was caused by the harness — ambiguous acceptance criteria, a missing gate check, a template gap — the fix must include a follow-up `module:infra` task to repair the harness, not just the instance.
+* **Repeat-finding rule (correct once, enforce forever).** Reviewers write each finding as `Finding <key>: <what is wrong> — <the fix>`, with a stable kebab-case key per class of mistake. `scripts/repeat-findings.sh` lists every key raised on two or more different agent PRs that has no enforcement task yet. The patcher files one `module:infra` task per such key, titled with `enforce:<key>`: its criteria make the gate fail on a reproduction of the mistake, with a failure message that names the fix. A rule reviewers keep re-teaching moves out of prose and into the gate (§2.1).
 
 ## 10. Provenance
 
 * Issues and PRs carry `agent-authored` or `human-authored` labels.
-* PR bodies follow the template: `Closes #N`; summary; the issue's acceptance criteria as a checklist, each with evidence (the command output line); gate status; provenance line (`Agent-authored (<model>)` or `Human-authored`).
+* PR bodies follow the template: `Closes #N`; summary; the issue's acceptance criteria as a checklist; an `## Evidence` section (§11.1); provenance line (`Agent-authored (<model>)` or `Human-authored`).
 * Agent commits carry a `Co-Authored-By` trailer identifying the model.
 * Review verdicts are GitHub reviews (approve / request-changes), so review history is inspectable and cannot be overwritten.
 
@@ -291,7 +302,16 @@ Three enforcement points, one definition:
 * Git hooks (optional, the consumer repo's own): hygiene/format at pre-commit on changed files; the gate at pre-push. Never bypassed — `--no-verify` is banned.
 * CI runs the same gate on every PR. **A PR without a green check is unreviewable** — reviewers reject on sight.
 
+* **Gate failures name the fix.** Every check the gate runs fails with a message that says what to change, not only what is wrong — that is what lets an agent recover without a human, and what makes a new check cheaper than a new prose rule (§2.1).
+
 Acceptance criteria are executed, not trusted: the reviewer runs every criterion itself in a clean checkout.
+
+### 11.1 Evidence, not diffs
+
+* Every agent PR carries an `## Evidence` section: each acceptance criterion's command with its output line, the gate result, and — when `EVIDENCE_CMD` is set — that command's report of the app actually running (a smoke run, property or fuzz tests, screenshots or a recording from an end-to-end run, the states a user flow passed through).
+* The reviewer reproduces that evidence in its clean checkout **before** reading the diff. Missing evidence, or evidence it cannot reproduce, is a finding. Its approval body is itself evidence: what it ran and what it saw.
+* The patcher refreshes the Evidence section on every push; stale evidence is no evidence.
+* Humans review proof, not diffs. Under `--auto-merge` a PR without an Evidence section never merges itself, and one that touches `HUMAN_MERGE_PATHS` always waits for a human (§8.2).
 
 ## 12. Day-1 Topology and Upgrade Path
 
@@ -317,4 +337,4 @@ When every agent runs under the repo owner's GitHub account, GitHub rejects a fo
 
 ## 14. Summary
 
-Specs decompose into dependency-ordered GitHub Issues with command-shaped acceptance criteria. An orchestrator loop ticks one state transition at a time (or one bounded batch of independent transitions, with `--parallel N` — §12): claim ready work into worktrees, implement to criteria, gate everything through one shared command, adversarially review with independent contexts, patch within bounds, and hand every merge to a human (or opt into auto-merge). Scripts are deterministic; agents supply only judgment; GitHub remembers everything.
+Specs decompose into dependency-ordered GitHub Issues with command-shaped acceptance criteria. An orchestrator loop ticks one state transition at a time (or one bounded batch of independent transitions, with `--parallel N` — §12): claim ready work into worktrees, implement to criteria, gate everything through one shared command, adversarially review with independent contexts, patch within bounds, and hand every merge to a human (or opt into auto-merge, where proof-carrying PRs outside the human-reserved paths merge themselves). Corrections that repeat become gate checks; a release fuzzer exercises each merged batch and feeds what breaks back in as tasks. Scripts are deterministic; agents supply only judgment; GitHub remembers everything.

@@ -164,6 +164,18 @@ MODULES=""
 #   NOTIFY_ESCALATE_CMD="afplay /System/Library/Sounds/Basso.aiff"
 NOTIFY_APPROVE_CMD=""
 NOTIFY_ESCALATE_CMD=""
+
+# Evidence: a command that PROVES the change works at runtime — runs the real app
+# and captures what it saw (a smoke script, property/fuzz tests, an e2e run that
+# saves screenshots), printing a short Markdown report. The implementer attaches
+# its output to the PR; the reviewer re-runs it in a clean checkout. Humans
+# review this proof, not the diff. Empty = criteria + gate output only.
+EVIDENCE_CMD=""
+
+# Paths (space-separated globs; ** crosses dirs, a trailing / = whole dir) whose
+# PRs never auto-merge, even under --auto-merge — they always wait for a human.
+# Guard the things that define "correct": the gate, this file, CI.
+HUMAN_MERGE_PATHS="scripts/check.sh .claude/delivery.conf .github/workflows/"
 EOF
   echo "==> wrote .claude/delivery.conf (edit GATE_CMD to your repo's gate)"
 fi
