@@ -211,13 +211,18 @@ You are not trusting the model to behave; you are trusting structure:
   escalate to `needs-human` and *stop*.
 - **Every merge is yours by default** — nothing reaches the base branch
   unattended unless you opt into `--auto-merge` (§6), and even then only a
-  fully-approved, mergeable, green PR lands (a bad assembly fails CI and cannot
-  auto-merge). The worst case of a bad free run is noisy PRs and spent tokens,
+  fully-approved, mergeable, green PR that carries evidence and stays out of
+  `HUMAN_MERGE_PATHS` lands (a bad assembly fails CI and cannot auto-merge; a
+  change to the gate or config always waits for you). The worst case of a bad free run is noisy PRs and spent tokens,
   not a broken base branch.
 - **Gates can't be bypassed** — `--no-verify` is banned and any pre-push hook,
   CI, and reviewers all run the same `GATE_CMD`.
 - **Reviews are execution, not vibes** — a criterion violation with green CI
-  still gets blocked, because reviewers run every criterion in a clean checkout.
+  still gets blocked, because reviewers run every criterion in a clean checkout
+  and reproduce the PR's evidence before reading the diff (spec §11.1).
+- **Repeat mistakes become checks** — a finding raised on two PRs gets an
+  `enforce:<key>` task that puts it in the gate (spec §9), so the loop stops
+  depending on reviewers remembering it.
 
 ### 5.4 While it runs
 
@@ -243,6 +248,21 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/task-worktree.sh" --cleanup <n>   # for each
 A crashed or interrupted loop needs no other recovery — the next tick's
 reconcile is the recovery.
 
+### 5.6 The outer loop: release fuzz
+
+Each PR was verified alone; nothing has yet used what they add up to. After a
+batch merges (the idle tick suggests it), run:
+
+```
+/delivery-loop:release-fuzz                 # exercise HEAD of the base branch, print findings
+/delivery-loop:release-fuzz --create        # after you approve them: file as fix tasks
+```
+
+It uses the app through its real seams and files each reproducible break as a
+task whose criteria put the repro in the gate. The loop delivers those like any
+other task, and the next batch gets fuzzed in turn. Set `EVIDENCE_CMD` first —
+the fuzzer and every reviewer start from it, so a good one pays twice.
+
 ## 6. Throughput physics (read before your first overnight run)
 
 **Your merge cadence is the loop's throttle.** Approved-but-unmerged PRs still
@@ -262,8 +282,11 @@ itself at the top of each tick, then reconciles so dependents unblock — an
 unattended run keeps flowing instead of idling on "waiting on human merges". The
 trade is deliberate: an unmerged approved PR is no longer held as unconfirmed, so
 enable it only once your review pass is trustworthy. The CI gate stays the hard
-backstop — a red gate leaves the PR non-`CLEAN`, so it cannot auto-merge. Without
-the flag, your merge cadence is the throttle exactly as above.
+backstop — a red gate leaves the PR non-`CLEAN`, so it cannot auto-merge — and
+`scripts/merge-eligible.sh` holds back any PR without an Evidence section or one
+that touches `HUMAN_MERGE_PATHS`, so your merges shrink to the changes that
+define "correct". Without the flag, your merge cadence is the throttle exactly as
+above.
 
 Dependency chains compound this: `#N+1` can't even become ready until you merge
 `#N`. Deep chains + absent merger = an idle loop, correctly.
@@ -302,6 +325,8 @@ Kept here so they don't get re-learned:
 | Human-assigned issue idle >72h | Stalled colleague | The loop pings once; talking to them is on you |
 | `needs-human` anything | Escalation by design | Read the latest PR/issue comment; decide; relabel |
 | Same task fails review 3× | Criteria ambiguous or task too big | Split the task / rewrite criteria; file the harness lesson |
+| Reviewers keep flagging the same mistake | A rule living in prose | `bash "${CLAUDE_PLUGIN_ROOT}/scripts/repeat-findings.sh"`; the patcher files `enforce:<key>` tasks — approve them |
+| `--auto-merge` skips an approved PR | It's held, by design | `bash "${CLAUDE_PLUGIN_ROOT}/scripts/merge-eligible.sh" <pr>` prints the `hold:` reason |
 | Labels look wrong vs reality | Drift | `bash "${CLAUDE_PLUGIN_ROOT}/scripts/task-queue.sh" --fix`; ground truth: closed issue > merged PR > open PR > labels |
 
 ## 9. Scaling up (when free runs are boringly reliable)

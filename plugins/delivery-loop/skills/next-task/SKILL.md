@@ -5,7 +5,7 @@ description: Claim the next ready task off the GitHub Issues queue (or a specifi
 
 # next-task — claim → implement → gate → PR
 
-You are the **implementer** role from the delivery spec (`${CLAUDE_PLUGIN_ROOT}/docs/agentic_delivery_spec.md`, §3.3, §6). Read `.claude/delivery.conf` for `GATE_CMD` (default `bash scripts/check.sh`), `STYLEGUIDES_DIR`, and `BASE_BRANCH`.
+You are the **implementer** role from the delivery spec (`${CLAUDE_PLUGIN_ROOT}/docs/agentic_delivery_spec.md`, §3.3, §6). Read `.claude/delivery.conf` for `GATE_CMD` (default `bash scripts/check.sh`), `STYLEGUIDES_DIR`, `BASE_BRANCH`, and `EVIDENCE_CMD`.
 
 ## Protocol (in order; scripts own the mechanics — never re-derive them)
 
@@ -14,10 +14,10 @@ You are the **implementer** role from the delivery spec (`${CLAUDE_PLUGIN_ROOT}/
 3. **Worktree.** `path=$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/task-worktree.sh" <n>)` — do ALL work inside `$path`. Never touch the main checkout.
 4. **Read.** `gh issue view <n>` — the Context and Acceptance criteria are the whole contract. Read the relevant styleguide in `STYLEGUIDES_DIR` before writing code. Match existing patterns.
 5. **Implement** to the acceptance criteria, and implement it *well*: among the solutions that satisfy the criteria, pick the best-practice, idiomatic one for the stack (spec §2.1). Nothing more — scope creep in an agent loop is a merge-conflict machine. If satisfying a criterion seems to *require* a non-best-practice solution (a workaround, an anti-pattern), don't silently ship it — comment on the issue and, if it blocks a clean solution, escalate per **If blocked**. **Keep the gate honest:** if your change introduces a linter, test suite, or build step, extend the gate (`GATE_CMD` / `scripts/check.sh`) to cover it — this is how "correct" grows with the repo.
-6. **Verify.** Run EVERY acceptance criterion literally, plus the gate (`GATE_CMD`). All must pass. Capture the passing output lines — they're your PR evidence.
+6. **Verify.** Run EVERY acceptance criterion literally, plus the gate (`GATE_CMD`). All must pass. Capture the passing output lines — they're your PR evidence. If `EVIDENCE_CMD` is set, run it in the worktree too and keep its report: that is the proof the change works when the app actually runs, not just that it compiles (spec §11.1).
 7. **Re-verify claim.** `gh issue view <n> --json assignees` — you must still be the sole assignee. If not, stop and report (someone reclaimed it).
 8. **Commit & push** from the worktree. If the repo installs git hooks, they fire — **never bypass the gate** (`--no-verify`). If a hook fails, fix the cause. Rebase onto `origin/$BASE_BRANCH` first if behind.
-9. **PR.** `gh pr create --title "<task title> (#<n>)" --body ...` following the repo's PR template if present: `Closes #<n>`, summary, acceptance-criteria checklist **with evidence per criterion**, gate status, `Agent-authored (model: <your model>)`. Add label `agent-authored`.
+9. **PR.** `gh pr create --title "<task title> (#<n>)" --body ...` following the repo's PR template if present: `Closes #<n>`, summary, acceptance-criteria checklist, then an **`## Evidence` section**: each criterion's command with its output line, the gate result, and the `EVIDENCE_CMD` report if set. Then `Agent-authored (model: <your model>)`. Add label `agent-authored`. The evidence is what a human reviews instead of the diff, and a PR without it never auto-merges (spec §8.2).
 10. **Labels.** `gh issue edit <n> --add-label status:in-review --remove-label status:claimed`.
 11. Report the PR URL.
 

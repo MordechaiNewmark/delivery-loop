@@ -3,15 +3,19 @@
 The plugin implementation. See the [repo README](../../README.md) for install,
 configuration, and the full walkthrough.
 
-- `skills/` — the ten `/delivery-loop:*` skills (init, author-styleguides,
+- `skills/` — the eleven `/delivery-loop:*` skills (init, author-styleguides,
   author-spec, decompose, next-task, review-task, patch-task, deliver-task,
-  delivery-tick, task-status).
+  delivery-tick, release-fuzz, task-status).
 - `scripts/` — the engine the skills drive:
   - `task-queue.sh` — compute the ready set; `--fix` reconciles labels, reaps
     stale claims, and closes delivered epics.
   - `claim-task.sh` + `lib/*.jq` — comment-ordered claim arbitration (unit-tested
     in `tests/`).
   - `task-worktree.sh` — create / reuse / clean up a task's isolated worktree.
+  - `merge-eligible.sh` + `lib/merge-eligible.jq` — the auto-merge gate: approved,
+    green, evidence attached, nothing under `HUMAN_MERGE_PATHS`.
+  - `repeat-findings.sh` + `lib/repeat-findings.jq` — review findings raised on
+    two or more PRs with no enforcement task yet (correct once, enforce forever).
   - `delivery-init.sh` — one-time repo bootstrap (labels + config + gate seed +
     styleguides stub + gitignore; guides you to create/connect a GitHub repo if
     none is).

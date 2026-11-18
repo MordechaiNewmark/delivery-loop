@@ -45,14 +45,16 @@ delivery-loop/
 ├── README.md                            # user-facing: how it works, install, config
 └── plugins/delivery-loop/
     ├── .claude-plugin/plugin.json        # the plugin manifest (version B — keep == A)
-    ├── skills/                           # the 10 /delivery-loop:* skills (SKILL.md each)
+    ├── skills/                           # the 11 /delivery-loop:* skills (SKILL.md each)
     ├── scripts/                          # the engine the skills drive
     │   ├── task-queue.sh                 # compute ready set; --fix reconciles labels
     │   ├── claim-task.sh + lib/*.jq      # comment-ordered Lamport claim lock
     │   ├── task-worktree.sh              # per-task isolated worktree lifecycle
+    │   ├── merge-eligible.sh + lib/*.jq  # the auto-merge gate (evidence, HUMAN_MERGE_PATHS)
+    │   ├── repeat-findings.sh + lib/*.jq # findings raised on ≥2 PRs → due for enforcement
     │   ├── delivery-init.sh              # one-time consumer bootstrap (labels+conf+gate seed)
     │   ├── lib/config.sh                 # resolve .claude/delivery.conf (defaults<file<env)
-    │   └── tests/                        # jq unit tests for the claim logic
+    │   └── tests/                        # jq unit tests for the claim, merge, and findings logic
     └── docs/                             # agentic_delivery_spec.md (design) + delivery_runbook.md (ops)
 ```
 
@@ -70,7 +72,8 @@ Two artifact types, two audiences:
 built-in defaults → the consumer's `.claude/delivery.conf` → environment
 variables (for CI). Keys: `GATE_CMD`, `BASE_BRANCH`, `WORKTREE_SETUP_CMD`,
 `SPEC_SOURCES`, `STYLEGUIDES_DIR`, `MODULES`, `NOTIFY_APPROVE_CMD`,
-`NOTIFY_ESCALATE_CMD` (documented in the README table).
+`NOTIFY_ESCALATE_CMD`, `EVIDENCE_CMD`, `HUMAN_MERGE_PATHS` (documented in the
+README table).
 
 **Adding a config key touches four places** — miss one and it silently defaults:
 1. `lib/config.sh` — add to `_DL_VARS`, the `:` default, and the `export` list.
@@ -87,7 +90,7 @@ bash scripts/check.sh
 ```
 
 It encodes this package's invariants: every script parses (`bash -n`), the
-claim-logic unit tests pass, the plugin manifest validates, **both manifests
+jq unit tests (claim, merge-eligible, repeat-findings) pass, the plugin manifest validates, **both manifests
 agree on the version**, and `grep -ri lineage plugins/` stays empty. A change
 that adds a new class of check belongs **in** `scripts/check.sh`, not in prose
 here — the gate is the single definition of "correct" (it is `GATE_CMD` in
@@ -133,8 +136,8 @@ stale.
 3. Tag the release: `claude plugin tag ./plugins/delivery-loop` → creates
    `delivery-loop--v<version>` (validates the two manifests agree). `git push --tags`.
 
-Adding a skill also means adding its row to the README's skill table and its
-one-liner to the plugin `docs/README.md`.
+Adding a skill also means adding its row to the README's skill table (the gate
+fails without it) and its one-liner to the plugin `README.md`.
 
 ## Origin & sync (porting from Lineage)
 
